@@ -1,0 +1,81 @@
+:root {
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --fg: #1a1d23;
+  --muted: #5c6570;
+  --line: #d8dde5;
+  --accent: #0f6e56;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  line-height: 1.5;
+  color: var(--fg);
+  background: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a.router-link-active {
+  font-weight: 600;
+}
+
+.layout {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0.75rem;
+}
+
+.brand {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.nav {
+  display: flex;
+  gap: 1rem;
+}
+
+.main {
+  min-height: 50vh;
+}
+
+.panel {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+input,
+button {
+  font: inherit;
+  padding: 0.5rem 0.75rem;
+}
+
+button {
+  cursor: pointer;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+}

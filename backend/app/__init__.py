@@ -1,0 +1,1 @@
+"""Shortlink FastAPI application package."""
