@@ -10,7 +10,7 @@
 |------|------|
 | 后端 | FastAPI、Uvicorn、Pydantic Settings |
 | 存储 | Redis only（无 PostgreSQL） |
-| 短码 | Redis `INCR` + Base62（最短 6 位） |
+| 短码 | 默认 Redis `INCR` + Base62；可选用户自定义短码 |
 | 前端 | Vue 3、TypeScript、Vite、Vue Router、Pinia |
 
 ## 仓库结构
@@ -57,8 +57,8 @@ npm run dev
 
 ## 你需要自己实现的部分
 
-- 后端：`services/base62.py`、`services/shortlink.py`，以及 `api/links.py` / `api/redirect.py` 中的业务
-- 前端：三个 View 里对接 `src/api/links.ts`
+- 后端：`services/base62.py`（含自定义短码校验）、`services/shortlink.py`，以及 `api/links.py` / `api/redirect.py`
+- 前端：三个 View 里对接 `src/api/links.ts`（创建时可传 `custom_code`）
 - Redis 连接注入（`deps.py` + `main.py` lifespan）
 
 ## 架构一览

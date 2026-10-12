@@ -6,12 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import health, links, redirect
 from app.config import get_settings
 
-
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    # TODO: init Redis connection pool here
+    # Per-request Redis is created in deps.get_redis(); keep lifespan light for now.
     yield
-    # TODO: close Redis connection pool here
 
 
 def create_app() -> FastAPI:

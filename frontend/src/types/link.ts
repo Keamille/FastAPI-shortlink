@@ -24,5 +24,6 @@ export interface LinkListData {
 
 export interface CreateLinkBody {
   url: string;
+  custom_code?: string | null;
   ttl_seconds?: number | null;
 }

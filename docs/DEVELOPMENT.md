@@ -15,7 +15,7 @@
 
 | 能力 | 说明 |
 |------|------|
-| 创建短链 | 提交长 URL，返回短链 |
+| 创建短链 | 提交长 URL，返回短链；可省略短码（自动生成）或传入自定义短码 |
 | 公开跳转 | `GET /{code}` → 302 到原始 URL，并累计点击数 |
 | 列表 / 详情 | 管理端分页查看、查看点击数与过期信息 |
 | 删除短链 | 删除映射与索引 |
@@ -25,7 +25,7 @@
 
 - 不落库到 RDBMS（PostgreSQL / MySQL 等）
 - 不做多租户、账号体系、复杂鉴权
-- 不做自定义短码别名、批量导入、开放平台 SDK
+- 不做批量导入、开放平台 SDK
 - 不做复杂风控（黑名单、钓鱼检测等）
 
 ### 1.3 技术栈
@@ -34,7 +34,7 @@
 |------|------|
 | 后端 API | FastAPI、Uvicorn、Pydantic Settings |
 | 存储 | Redis（映射、元数据、序列号、列表索引） |
-| 短码算法 | Redis `INCR` + Base62（最小长度 6） |
+| 短码算法 | 默认：Redis `INCR` + Base62（最小长度 6）；可选：用户自定义短码 |
 | 前端管理端 | Vue 3、TypeScript、Vite、Vue Router、Pinia |
 | 本地依赖 | Docker Compose 启动 Redis |
 | HTTP | JSON REST；公开跳转为 302 |
@@ -103,11 +103,16 @@ sequenceDiagram
   participant API as FastAPI
   participant R as Redis
 
-  FE->>API: POST /api/v1/links {url, ttl_seconds?}
-  API->>API: 校验 URL
-  API->>R: INCR shortlink:seq
-  API->>API: Base62 编码为 code
-  API->>R: SET shortlink:code:{code} url EX ttl?
+  FE->>API: POST /api/v1/links {url, custom_code?, ttl_seconds?}
+  API->>API: 校验 URL / custom_code
+  alt 提供 custom_code
+    API->>R: EXISTS shortlink:code:{custom_code}
+    API->>API: 已占用则 409；否则 code=custom_code
+  else 未提供
+    API->>R: INCR shortlink:seq
+    API->>API: Base62 编码为 code
+  end
+  API->>R: SET NX shortlink:code:{code} url EX ttl?
   API->>R: HSET shortlink:meta:{code} ...
   API->>R: ZADD shortlink:index score code
   API-->>FE: {code, short_url, ...}
@@ -167,11 +172,20 @@ sequenceDiagram
 | `clicks` | string（整数） | 点击次数，默认 `"0"` |
 | `ttl_seconds` | string（整数或空） | 创建时 TTL；空表示永不过期 |
 
-### 3.2 短码算法（INCR + Base62）
+### 3.2 短码算法
+
+创建时二选一：
+
+| 模式 | 何时使用 | 规则 |
+|------|----------|------|
+| 自动生成 | 未传 `custom_code` | `INCR shortlink:seq` → Base62，最小长度 6 |
+| 自定义 | 传入 `custom_code` | 校验格式与保留字 → 唯一性检查 → 直接使用 |
+
+#### 3.2.1 自动生成（INCR + Base62）
 
 1. `n = INCR shortlink:seq`
 2. 将 `n` 转为 Base62（字符集：`0-9a-zA-Z`）
-3. 若长度不足 **6**，左侧补 `0`（或从足够大的起始序号开始，避免过短码）
+3. 若长度不足 **6**，左侧补 `0`
 
 示例（伪代码）：
 
@@ -190,8 +204,29 @@ def to_base62(n: int, min_length: int = 6) -> str:
     return s.rjust(min_length, ALPHABET[0])
 ```
 
-优点：实现简单、同 redis 实例内无碰撞、按序递增易排查。  
-注意：短码可被枚举猜测；本 MVP 不做鉴权，生产可加签名短码或限流。
+优点：实现简单、同 Redis 实例内无碰撞、按序递增易排查。
+
+#### 3.2.2 自定义短码
+
+请求字段：`custom_code`（可选）。
+
+**格式约束（定稿）：**
+
+| 规则 | 取值 |
+|------|------|
+| 字符集 | 仅 Base62：`0-9` `a-z` `A-Z`（与自动码同一字母表，避免路径歧义） |
+| 长度 | 3～32（自定义允许短于自动码的 6 位） |
+| 大小写 | **区分大小写**（`Foo` 与 `foo` 为不同短码） |
+| 保留字 | 禁止：`api`、`health`、`docs`、`redoc`、`openapi`、`static`（大小写不敏感匹配） |
+
+**唯一性（定稿）：**
+
+1. 格式/保留字不通过 → `40001`
+2. 写入前用 `EXISTS shortlink:code:{code}`，或直接 `SET ... NX`：
+   - 已存在 → `40901`（短码冲突）
+3. 自定义短码**不消耗** `shortlink:seq`（避免 seq 与自定义码纠缠）
+
+注意：短码可被枚举猜测；自定义短码更容易被猜中热门词。本 MVP 不做鉴权，生产可加限流或鉴权。
 
 ### 3.3 过期与索引清理
 
@@ -248,8 +283,9 @@ ZREM shortlink:index {code}
 | code | HTTP | 含义 |
 |------|------|------|
 | 0 | 200 | 成功 |
-| 40001 | 400 | 参数错误（非法 URL、非法 TTL 等） |
+| 40001 | 400 | 参数错误（非法 URL、非法 TTL、非法 custom_code 等） |
 | 40401 | 404 | 短链不存在或已过期 |
+| 40901 | 409 | 自定义短码已存在 |
 | 50000 | 500 | 服务内部错误 |
 
 公开跳转 `GET /{code}` 直接返回 **302 / 404**，不包一层 JSON。
@@ -283,6 +319,7 @@ Content-Type: application/json
 ```json
 {
   "url": "https://example.com/very/long/path?q=1",
+  "custom_code": "myBlog",
   "ttl_seconds": 86400
 }
 ```
@@ -290,20 +327,23 @@ Content-Type: application/json
 | 字段 | 必填 | 说明 |
 |------|------|------|
 | `url` | 是 | 须为合法 http/https URL |
+| `custom_code` | 否 | 自定义短码；省略则自动 Base62 生成。规则见 §3.2.2 |
 | `ttl_seconds` | 否 | 过期秒数；省略或 `null` 表示不过期；建议上限如 31536000（1 年） |
 
-成功 `data`：
+成功 `data`（自定义示例）：
 
 ```json
 {
-  "code": "000001",
+  "code": "myBlog",
   "original_url": "https://example.com/very/long/path?q=1",
-  "short_url": "http://localhost:8000/000001",
+  "short_url": "http://localhost:8000/myBlog",
   "created_at": 1710000000,
   "ttl_seconds": 86400,
   "clicks": 0
 }
 ```
+
+未传 `custom_code` 时，`code` / `short_url` 为自动生成的 Base62 码（如 `000001`）。
 
 ### 4.4 分页列表
 
@@ -443,11 +483,13 @@ pytest-asyncio>=0.23
 
 | 方法 | 职责 |
 |------|------|
-| `create_link(url, ttl_seconds)` | INCR → Base62 → 写 code/meta/index |
+| `create_link(body)` | 有 `custom_code` 则校验+占位；否则 INCR→Base62；写 code/meta/index |
 | `get_link(code)` | 读 meta；不存在抛业务异常 |
 | `list_links(page, page_size)` | ZSET 分页 + 惰性清理 |
 | `delete_link(code)` | DEL + ZREM |
 | `resolve_and_click(code)` | GET code → HINCRBY → 返回 URL |
+
+`services/base62.py` 建议同时提供：`to_base62`、`is_valid_custom_code`（字符集/长度/保留字）。
 
 路由层只做参数校验与响应包装，不直接散落 Redis 命令。
 
@@ -508,6 +550,7 @@ export interface LinkListData {
 
 export interface CreateLinkBody {
   url: string;
+  custom_code?: string | null;
   ttl_seconds?: number | null;
 }
 ```
@@ -518,7 +561,7 @@ export interface CreateLinkBody {
 
 | 页面 | 路由 | 行为 |
 |------|------|------|
-| 创建短链 | `/` 或 `/create` | 表单提交 `POST /api/v1/links`，展示 `short_url`，可一键复制 |
+| 创建短链 | `/` 或 `/create` | 表单：长链 + 可选自定义短码 + 可选 TTL；提交后展示 `short_url`，可一键复制 |
 | 短链列表 | `/links` | 分页表格：短码、原链、点击、创建时间、操作（详情/删除） |
 | 详情 | `/links/:code` | `GET` 详情；展示点击数、TTL |
 
@@ -625,6 +668,8 @@ npm run dev
 
 - [ ] Redis 可连，`/health` 返回 redis ok
 - [ ] 管理端可创建短链，返回 `short_url`
+- [ ] 可填写 `custom_code` 创建成功；重复自定义码返回冲突
+- [ ] 非法自定义短码（字符/长度/保留字）被拒绝
 - [ ] 列表能看到刚创建的项
 - [ ] 浏览器访问 `short_url` 发生 302 跳转
 - [ ] 再次打开详情/列表，`clicks` 增加
@@ -706,7 +751,10 @@ npm run build
 | 用例 | 断言要点 |
 |------|----------|
 | `test_base62_padding` | 小整数输出长度 ≥ 6，字符集合法 |
-| `test_create_link` | 201/200，返回 code、short_url；Redis 有对应 key |
+| `test_custom_code_validation` | 非法字符/过短过长/保留字 → 校验失败 |
+| `test_create_link` | 201/200，返回自动 code、short_url；Redis 有对应 key |
+| `test_create_custom_code` | 传入 `custom_code` 成功；`short_url` 含该码；不推进 seq（或 seq 不变） |
+| `test_create_custom_code_conflict` | 同码二次创建 → 409 / `40901` |
 | `test_create_invalid_url` | 400 / `40001` |
 | `test_redirect` | 创建后 GET `/{code}` 为 302，Location 正确；clicks +1 |
 | `test_redirect_missing` | 404 |
@@ -718,12 +766,13 @@ npm run build
 
 ### 9.2 手工验收标准
 
-1. 创建合法长链成功，非法 URL 被拒绝。  
-2. 短链 302 跳转正确，重复访问点击数累加。  
-3. 列表分页、详情、删除行为正确。  
-4. TTL 到期后不可访问。  
-5. Vue 管理端三个页面可用，无控制台 CORS/类型错误。  
-6. `/health` 在 Redis 断开时能反映异常（可选加强）。
+1. 创建合法长链成功；非法 URL / 非法自定义短码被拒绝。  
+2. 自动短码与自定义短码均可 302 跳转；重复自定义码返回冲突。  
+3. 短链重复访问点击数累加。  
+4. 列表分页、详情、删除行为正确。  
+5. TTL 到期后不可访问。  
+6. Vue 管理端可填写可选自定义短码；无控制台 CORS/类型错误。  
+7. `/health` 在 Redis 断开时能反映异常（可选加强）。
 
 ---
 
@@ -734,8 +783,7 @@ npm run build
 | 方向 | 说明 |
 |------|------|
 | PostgreSQL 持久化 | Redis 作缓存，PG 作权威存储；跳转 miss 时回源 |
-| 自定义短码 | 创建时可选 `custom_code`，需唯一性校验 |
-| 鉴权 | API Key / JWT，保护写接口 |
+| 鉴权 | API Key / JWT，保护写接口与自定义短码 |
 | 限流 | 按 IP / API Key 限制创建与跳转 |
 | 统计增强 | 按日点击、Referer、独立访客 |
 | 管理端体验 | 二维码、批量导出、过期筛选 |
@@ -746,16 +794,18 @@ npm run build
 
 - 超长 URL：建议限制长度（如 2048），防止异常大 value。  
 - 短码字符：仅 Base62，路径参数校验失败直接 404。  
-- 并发创建：依赖 Redis 单线程 `INCR`，天然串行安全。  
+- 自定义短码冲突：返回 `40901`，不要覆盖已有映射。  
+- 自动码与自定义码可能「碰巧」相同：一律按 key 是否已存在处理（`SET NX`）。  
+- 并发创建：自动码依赖 Redis `INCR`；自定义码用 `SET NX` 防竞态。  
 - 时钟：`created_at` 用服务器 UTC Unix 秒即可。
 
 ## 附录 B：实现顺序建议（练习用）
 
 1. Docker 起 Redis + 最小 FastAPI `/health`  
-2. Base62 + `POST /api/v1/links` + `GET /{code}`  
+2. Base62 + 自定义短码校验 + `POST /api/v1/links` + `GET /{code}`  
 3. meta、clicks、列表、删除、TTL  
 4. 统一响应与 CORS  
-5. 脚手架 Vue3+TS，打通创建与列表  
+5. 脚手架 Vue3+TS，打通创建（含可选自定义短码）与列表  
 6. 详情、删除、复制短链、联调验收  
 7. Compose 打包与 README 快速开始  
 
