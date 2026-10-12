@@ -67,6 +67,20 @@ a.router-link-active {
   color: var(--muted);
 }
 
+.error {
+  color: #b42318;
+  margin: 0;
+}
+
+.field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.field input {
+  width: 100%;
+}
+
 input,
 button {
   font: inherit;
@@ -78,4 +92,98 @@ button {
   background: var(--accent);
   color: #fff;
   border: none;
+  width: fit-content;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+button.secondary {
+  background: #fff;
+  color: var(--fg);
+  border: 1px solid var(--line);
+}
+
+button.danger {
+  background: #b42318;
+}
+
+.result {
+  border-top: 1px solid var(--line);
+  padding-top: 0.75rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.actions,
+.ops,
+.pager,
+.row-between {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.row-between {
+  justify-content: space-between;
+}
+
+.row-between h2 {
+  margin: 0;
+}
+
+.link-btn {
+  display: inline-block;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  padding: 0.55rem 0.4rem;
+  vertical-align: top;
+}
+
+.url-cell {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail {
+  margin: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.detail div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.detail dt {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.detail dd {
+  margin: 0;
+  word-break: break-all;
 }

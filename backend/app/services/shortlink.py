@@ -55,6 +55,7 @@ class ShortlinkService:
         short_url = await redis.get(f"short_url:code:{code}")
         original_url = await redis.get(f"original_url:code:{code}")
         created_at = await redis.get(f"created_at:code:{code}")
+        clicks = await redis.get(f"click_count:code:{code}")
         ttl_seconds = await redis.ttl(f"short_url:code:{code}")
         if not short_url or not original_url or created_at is None:
             raise ValueError("Short link not found")
@@ -64,6 +65,7 @@ class ShortlinkService:
             short_url=short_url,
             created_at=int(created_at),
             ttl_seconds=ttl_seconds if ttl_seconds and ttl_seconds > 0 else None,
+            clicks=int(clicks or 0),
         )
 
     async def list_links(self, page: int, page_size: int, redis: Redis) -> LinkListData:
@@ -73,6 +75,7 @@ class ShortlinkService:
             short_url = await redis.get(f"short_url:code:{code}")
             original_url = await redis.get(f"original_url:code:{code}")
             created_at = await redis.get(f"created_at:code:{code}")
+            clicks = await redis.get(f"click_count:code:{code}")
             ttl_seconds = await redis.ttl(f"short_url:code:{code}")
             if not short_url or not original_url or created_at is None:
                 continue
@@ -83,6 +86,7 @@ class ShortlinkService:
                     short_url=short_url,
                     created_at=int(created_at),
                     ttl_seconds=ttl_seconds if ttl_seconds and ttl_seconds > 0 else None,
+                    clicks=int(clicks or 0),
                 )
             )
         total = len(items)

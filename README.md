@@ -1,69 +1,81 @@
 # FastAPI 短链接微服务
 
-基于 **FastAPI + Redis** 的轻量长链转短链服务，配套 **Vue 3 + TypeScript** 管理端，适合练习前后端分离。
-
-> 仓库已搭好前后端骨架与开发文档；业务逻辑（短链 CRUD、跳转、页面联调）按 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) 自行实现。
+基于 **FastAPI + Redis** 的长链转短链服务，配套 **Vue 3 + TypeScript** 管理端。
 
 ## 技术栈
 
 | 层级 | 选型 |
 |------|------|
 | 后端 | FastAPI、Uvicorn、Pydantic Settings |
-| 存储 | Redis only（无 PostgreSQL） |
-| 短码 | 默认 Redis `INCR` + Base62；可选用户自定义短码 |
-| 前端 | Vue 3、TypeScript、Vite、Vue Router、Pinia |
+| 存储 | Redis（无 PostgreSQL） |
+| 短码 | 默认 `INCR` + Base62；可选自定义短码 |
+| 前端 | Vue 3、TypeScript、Vite、Vue Router、Pinia、Axios |
 
-## 仓库结构
+## 使用教程
 
-```text
-FastAPI-shortlink/
-├── backend/          # FastAPI 模板（health / ping 可用，业务接口待实现）
-│   └── .venv/        # 本地虚拟环境（已 gitignore）
-├── frontend/         # Vue3 + TS 管理端模板
-├── docs/
-│   └── DEVELOPMENT.md
-├── docker-compose.yml
-└── README.md
-```
+### 环境要求
 
-## 完整开发文档
+- Python 3.11+
+- Node.js 18+
+- Docker（用于启动 Redis）
 
-**[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** — 架构、Redis、API、联调与验收。
+### 1. 启动 Redis
 
-## 快速开始
+在项目根目录：
 
 ```bash
-# 1. Redis
 docker compose up -d redis
+```
 
-# 2. 后端（虚拟环境已可按下列命令重建）
+若本机 `6379` 已有 Redis 在跑，可跳过此步。
+
+### 2. 启动后端
+
+```bash
 cd backend
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1          # Windows PowerShell
-pip install -r requirements.txt
-copy .env.example .env                # 若尚无 .env
-uvicorn app.main:app --reload --port 8000
 
-# 3. 前端（另开终端）
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+
+# macOS / Linux
+# source .venv/bin/activate
+
+pip install -r requirements.txt
+copy .env.example .env          # Windows；Linux/macOS 用 cp
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+- API 文档：http://localhost:8000/docs  
+- 健康检查：http://localhost:8000/health  
+
+### 3. 启动前端管理端
+
+另开一个终端：
+
+```bash
 cd frontend
 npm install
-copy .env.example .env
+copy .env.example .env          # Windows；Linux/macOS 用 cp
 npm run dev
 ```
 
-- Swagger：`http://localhost:8000/docs`
-- Health：`http://localhost:8000/health`
-- 管理端：`http://localhost:5173`
+浏览器打开：http://localhost:5173  
 
-## 你需要自己实现的部分
+开发环境已配置 Vite 代理，将 `/api`、`/health` 转发到后端 `8000` 端口。
 
-- 后端：`services/base62.py`（含自定义短码校验）、`services/shortlink.py`，以及 `api/links.py` / `api/redirect.py`
-- 前端：三个 View 里对接 `src/api/links.ts`（创建时可传 `custom_code`）
-- Redis 连接注入（`deps.py` + `main.py` lifespan）
+### 4. 基本使用
 
-## 架构一览
+1. 在「创建」页填写长链接（可选手写短码、TTL）
+2. 提交后复制生成的短链，浏览器打开应 302 跳转到原地址
+3. 在「列表」查看、进入详情或删除短链
 
-```text
-浏览器 ──► Vue 管理端 ──REST/JSON──► FastAPI ──► Redis
-浏览器 ──► GET /{code} ───────────► FastAPI ──► Redis ──► 302 长链
-```
+### 常用接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/v1/links` | 创建短链（body: `url`，可选 `custom_code`、`ttl_seconds`） |
+| GET | `/api/v1/links` | 分页列表 |
+| GET | `/api/v1/links/{code}` | 详情 |
+| DELETE | `/api/v1/links/{code}` | 删除 |
+| GET | `/{code}` | 公开跳转（302） |
